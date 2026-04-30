@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { CheckCircle2, LogOut, Mail, Monitor, Moon, Save, Sun, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
@@ -92,11 +93,16 @@ export default function Profile() {
 
           <div className="px-8 pb-8 -mt-12 text-center">
             <div className="relative inline-block group">
-              <img
-                src={avatarUrl || user.user_metadata?.avatar_url || user.user_metadata?.picture || getDefaultAvatar(user.id)}
-                alt={username}
-                className="w-32 h-32 rounded-full border-4 border-white dark:border-neutral-900 shadow-xl bg-white dark:bg-neutral-900 object-cover backdrop-blur-md transition-colors"
-              />
+              <div className="w-32 h-32 rounded-full border-4 border-white dark:border-neutral-900 shadow-xl bg-white dark:bg-neutral-900 overflow-hidden relative transition-colors">
+                <Image
+                  src={avatarUrl || user.user_metadata?.avatar_url || user.user_metadata?.picture || getDefaultAvatar(user.id)}
+                  alt={username}
+                  fill
+                  sizes="128px"
+                  className="object-cover backdrop-blur-md"
+                  priority
+                />
+              </div>
               <button
                 type="button"
                 className="absolute bottom-0 right-0 p-2 bg-white dark:bg-neutral-800 rounded-full shadow-lg border border-neutral-100 dark:border-neutral-700 hover:scale-110 transition-all"

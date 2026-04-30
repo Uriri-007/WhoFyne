@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload as UploadIcon, X, Check, Loader2, Sparkles } from 'lucide-react';
 import { supabase } from '@/src/lib/supabase';
+import { uploadWithRetry } from '@/src/lib/upload';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
 
@@ -143,15 +144,9 @@ export default function Upload() {
       const storagePath = `${user.id}/${today}-${crypto.randomUUID()}.webp`;
       const imageBlob = dataUrlToBlob(optimizedBase64);
 
-      const { error: storageError } = await supabase.storage
-        .from('uploads')
-        .upload(storagePath, imageBlob, {
-          contentType: 'image/webp',
-          cacheControl: '31536000',
-          upsert: false,
-        });
-
-      if (storageError) {
+      try {
+        await uploadWithRetry(storagePath, imageBlob);
+      } catch (storageError) {
         throw storageError;
       }
 

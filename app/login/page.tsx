@@ -50,7 +50,7 @@ export default function LoginPage() {
           throw error;
         }
 
-        router.push('/'); // Redirect home
+        router.push('/dashboard'); // Redirect to dashboard
       }
     } catch (err: any) {
       // Don't log expected auth errors to console to avoid cluttering and confusion
@@ -81,7 +81,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await loginWithGoogle();
-      router.push('/');
+      router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Google authentication failed.');
     } finally {

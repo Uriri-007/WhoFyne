@@ -7,6 +7,7 @@ import Navbar, { Footer } from '@/src/components/Navigation';
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-sans',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {

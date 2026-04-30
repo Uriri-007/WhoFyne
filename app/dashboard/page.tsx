@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { Trophy, TrendingUp, Award } from 'lucide-react';
 import { PageTransition } from '@/src/components/Navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -19,8 +20,10 @@ export default function Dashboard() {
   const { profile } = useAuth();
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     let active = true;
 
     async function fetchLeaderboard() {
@@ -117,13 +120,15 @@ export default function Dashboard() {
                 {leaderboard.slice(0, 5).map((user, idx) => (
                   <div key={user.id} className="flex items-center justify-between group">
                     <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <img 
+                      <div className="relative w-10 h-10">
+                        <Image 
                           src={user.avatar_url || getDefaultAvatar(user.id)} 
                           alt={user.username} 
-                          className="w-10 h-10 rounded-full border border-neutral-100 dark:border-neutral-800 transition-colors" 
+                          fill
+                          sizes="40px"
+                          className="rounded-full border border-neutral-100 dark:border-neutral-800 transition-colors object-cover" 
                         />
-                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-white dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 shadow-sm rounded-full flex items-center justify-center text-[10px] font-bold dark:text-white transition-colors">
+                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-white dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 shadow-sm rounded-full flex items-center justify-center text-[10px] font-bold dark:text-white transition-colors z-10">
                           {idx + 1}
                         </span>
                       </div>
@@ -160,40 +165,42 @@ export default function Dashboard() {
             </div>
 
             <div className="flex-1 w-full min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart id="vibrance-leaderboard-chart" data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#a3a3a3" strokeOpacity={0.2} />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#a3a3a3', fontSize: 10 }}
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#a3a3a3', fontSize: 10 }} 
-                  />
-                  <Tooltip 
-                    cursor={{ fill: 'currentColor', opacity: 0.05 }}
-                    contentStyle={{ 
-                      borderRadius: '16px', 
-                      border: 'none', 
-                      boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      backgroundColor: 'var(--tooltip-bg, #fff)',
-                      color: 'var(--tooltip-color, #000)'
-                    }}
-                  />
-                  <Bar dataKey="votes" radius={[10, 10, 0, 0]} barSize={40}>
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.isMe ? '#fbbf24' : '#4f46e5'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              {mounted && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart id="vibrance-leaderboard-chart" data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#a3a3a3" strokeOpacity={0.2} />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#a3a3a3', fontSize: 10 }}
+                      dy={10}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#a3a3a3', fontSize: 10 }} 
+                    />
+                    <Tooltip 
+                      cursor={{ fill: 'currentColor', opacity: 0.05 }}
+                      contentStyle={{ 
+                        borderRadius: '16px', 
+                        border: 'none', 
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        backgroundColor: 'var(--tooltip-bg, #fff)',
+                        color: 'var(--tooltip-color, #000)'
+                      }}
+                    />
+                    <Bar dataKey="votes" radius={[10, 10, 0, 0]} barSize={40}>
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.isMe ? '#fbbf24' : '#4f46e5'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>

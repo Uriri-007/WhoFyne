@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { Share2, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getDefaultAvatar, supabase, type UploadRow } from '@/src/lib/supabase';
+import { castVote } from '@/src/lib/votes';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
 
@@ -163,20 +164,8 @@ export default function Home() {
     ));
 
     try {
-      const { error } = await supabase
-        .from('votes')
-        .insert({
-          user_id: user.id,
-          upload_id: uploadId,
-          type,
-        });
-
-      if (error) {
-        throw error;
-      }
-
+      await castVote(user.id, uploadId, type);
       setUserVotes(prev => ({ ...prev, [uploadId]: type }));
-
     } catch (error: any) {
       // 2. Revert on Error
       setUploads(originalUploads);
@@ -243,21 +232,25 @@ export default function Home() {
               <div className="aspect-[4/5] overflow-hidden bg-neutral-100 dark:bg-neutral-800 relative">
                 <Image
                   src={upload.imageUrl}
-                  alt={upload.title}
+                  alt={upload.title || 'Untitled vibrant capture'}
                   fill
                   className="object-cover transition-transform duration-700 group-hover:scale-110"
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                  priority={index < 3}
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  priority={index < 2}
+                  loading={index < 2 ? undefined : 'lazy'}
+                  quality={85}
                   referrerPolicy="no-referrer"
                 />
                 
                 {/* Uploader Badge */}
                 <div className="absolute top-4 left-4 flex items-center gap-2 pr-3 py-1 pl-1 bg-black/40 backdrop-blur-md rounded-full text-white text-xs font-medium border border-white/20 z-10 transition-colors">
                   <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20 relative">
-                    <img 
+                    <Image
                       src={upload.uploaderAvatar || getDefaultAvatar(upload.uploaderId)} 
                       alt={upload.uploaderName}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="24px"
+                      className="object-cover"
                     />
                   </div>
                   <span>{upload.uploaderName}</span>

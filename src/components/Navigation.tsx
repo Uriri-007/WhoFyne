@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { Home, LayoutDashboard, LogIn, LogOut, Upload, User } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -69,11 +70,13 @@ export default function Navbar() {
         </Link>
       ) : (
         <div className="flex items-center gap-2 ml-2 pl-2 border-l border-neutral-200 dark:border-neutral-800 transition-colors">
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-neutral-200 dark:border-neutral-700 transition-colors bg-white dark:bg-neutral-800">
-            <img
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-neutral-200 dark:border-neutral-700 transition-colors bg-white dark:bg-neutral-800 relative">
+            <Image
               src={profile?.avatar_url || user.user_metadata?.avatar_url || user.user_metadata?.picture || getDefaultAvatar(user.id)}
               alt="User"
-              className="w-full h-full object-cover"
+              fill
+              sizes="32px"
+              className="object-cover"
               referrerPolicy="no-referrer"
             />
           </div>
