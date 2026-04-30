@@ -1,23 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { doc, updateDoc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { User, Mail, Save, LogOut, CheckCircle2, Moon, Sun, Monitor } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, LogOut, Mail, Monitor, Moon, Save, Sun, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
+import { getDefaultAvatar, supabase, type GenderIdentity } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
 import { ProfileSkeleton } from '@/src/components/Skeleton';
 
 export default function Profile() {
-  const { user, profile, logout, loading: authLoading } = useAuth();
+  const { user, profile, logout, loading: authLoading, refreshProfile } = useAuth();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [username, setUsername] = useState('');
-  const [gender, setGender] = useState('prefer_not_to_say');
+  const [gender, setGender] = useState<GenderIdentity>('prefer_not_to_say');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -36,7 +35,7 @@ export default function Profile() {
     if (profile) {
       setUsername(profile.username || '');
       setGender(profile.gender || 'prefer_not_to_say');
-      setAvatarUrl(profile.avatarUrl || '');
+      setAvatarUrl(profile.avatar_url || '');
     }
   }, [profile]);
 
@@ -50,39 +49,36 @@ export default function Profile() {
     setSaved(false);
 
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        username,
-        gender,
-        avatarUrl
-      });
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          username,
+          gender,
+          avatar_url: avatarUrl,
+        })
+        .eq('id', user.id);
 
-      // Update all user's uploads with new username/avatar if they changed
-      if (profile.username !== username || profile.avatarUrl !== avatarUrl) {
-        try {
-          const uploadsRef = collection(db, 'uploads');
-          const q = query(uploadsRef, where('uploaderId', '==', user.uid));
-          const uploadsSnap = await getDocs(q);
-          
-          if (!uploadsSnap.empty) {
-            const batch = writeBatch(db);
-            uploadsSnap.docs.forEach(uploadDoc => {
-              batch.update(uploadDoc.ref, {
-                uploaderName: username,
-                uploaderAvatar: avatarUrl
-              });
-            });
-            await batch.commit();
-          }
-        } catch (err: any) {
-          handleFirestoreError(err, OperationType.WRITE, 'uploads/batch_update_profile');
-        }
+      if (error) {
+        throw error;
       }
 
+      const { error: authError } = await supabase.auth.updateUser({
+        data: {
+          username,
+          avatar_url: avatarUrl,
+        },
+      });
+
+      if (authError) {
+        throw authError;
+      }
+
+      await refreshProfile();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    } catch (error: any) {
+      console.error('Profile update error:', error);
+      alert(error.message || 'Unable to update profile. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -92,18 +88,19 @@ export default function Profile() {
     <PageTransition>
       <div className="max-w-2xl mx-auto px-4 pt-12 pb-32">
         <div className="bg-white dark:bg-neutral-900 rounded-[40px] border border-neutral-100 dark:border-neutral-800 shadow-sm overflow-hidden transition-colors">
-          <div className="h-32 bg-gradient-to-r from-indigo-500 to-purple-600"></div>
-          
+          <div className="h-32 bg-gradient-to-r from-indigo-500 to-purple-600" />
+
           <div className="px-8 pb-8 -mt-12 text-center">
             <div className="relative inline-block group">
               <img
-                src={avatarUrl || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
+                src={avatarUrl || user.user_metadata?.avatar_url || user.user_metadata?.picture || getDefaultAvatar(user.id)}
                 alt={username}
                 className="w-32 h-32 rounded-full border-4 border-white dark:border-neutral-900 shadow-xl bg-white dark:bg-neutral-900 object-cover backdrop-blur-md transition-colors"
               />
-              <button 
+              <button
+                type="button"
                 className="absolute bottom-0 right-0 p-2 bg-white dark:bg-neutral-800 rounded-full shadow-lg border border-neutral-100 dark:border-neutral-700 hover:scale-110 transition-all"
-                onClick={() => setAvatarUrl(`https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`)}
+                onClick={() => setAvatarUrl(getDefaultAvatar(String(Date.now())))}
                 title="Randomize Avatar"
               >
                 <motion.div whileTap={{ rotate: 180 }}>
@@ -112,7 +109,9 @@ export default function Profile() {
               </button>
             </div>
 
-            <h1 className="mt-6 text-2xl font-bold text-neutral-900 dark:text-neutral-50 transition-colors">{profile.username}</h1>
+            <h1 className="mt-6 text-2xl font-bold text-neutral-900 dark:text-neutral-50 transition-colors">
+              {profile.username}
+            </h1>
             <p className="text-neutral-500 dark:text-neutral-400 text-sm flex items-center justify-center gap-1.5 mt-1 transition-colors">
               <Mail className="w-3 h-3" />
               {profile.email}
@@ -126,15 +125,15 @@ export default function Profile() {
                     {[
                       { id: 'light', icon: Sun, label: 'Light' },
                       { id: 'dark', icon: Moon, label: 'Dark' },
-                      { id: 'system', icon: Monitor, label: 'System' }
+                      { id: 'system', icon: Monitor, label: 'System' },
                     ].map((t) => (
                       <button
                         key={t.id}
                         type="button"
                         onClick={() => setTheme(t.id)}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                          theme === t.id 
-                            ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm ring-1 ring-neutral-200/50 dark:ring-neutral-600' 
+                          theme === t.id
+                            ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm ring-1 ring-neutral-200/50 dark:ring-neutral-600'
                             : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
                         }`}
                       >
@@ -162,7 +161,7 @@ export default function Profile() {
                 <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 ml-2">Gender Identity</label>
                 <select
                   value={gender}
-                  onChange={(e) => setGender(e.target.value)}
+                  onChange={(e) => setGender(e.target.value as GenderIdentity)}
                   className="w-full px-5 py-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800 border-none ring-1 ring-neutral-200 dark:ring-neutral-700 focus:ring-2 focus:ring-indigo-600 dark:focus:ring-indigo-500 transition-all outline-none appearance-none dark:text-neutral-100"
                 >
                   <option value="male">Male</option>

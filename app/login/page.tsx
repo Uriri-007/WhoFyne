@@ -4,10 +4,8 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
-import { Mail, Lock, User, AlertCircle, ArrowRight, Github } from 'lucide-react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth, db } from '@/src/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { Mail, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
+import { supabase } from '@/src/lib/supabase';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,15 +26,30 @@ export default function LoginPage() {
 
     try {
       if (isSignUp) {
-        // Sign Up
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, {
-          displayName: username,
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { username },
+            emailRedirectTo: `${window.location.origin}/profile`,
+          },
         });
+
+        if (error) {
+          throw error;
+        }
+
         router.push('/profile'); // Redirect to profile to fill out details
       } else {
-        // Login
-        await signInWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          throw error;
+        }
+
         router.push('/'); // Redirect home
       }
     } catch (err: any) {
@@ -45,15 +58,15 @@ export default function LoginPage() {
         console.error('Authentication error:', err);
       }
       
-      if (err.code === 'auth/operation-not-allowed') {
-        setError('Email/Password sign-up is not allowed. Please check your Firebase settings.');
-      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+      if (err.message?.toLowerCase().includes('provider is not enabled')) {
+        setError('Email/Password sign-up is not allowed. Please check your Supabase auth settings.');
+      } else if (err.message?.toLowerCase().includes('invalid login credentials')) {
         setError('Incorrect email or password. Please try again.');
-      } else if (err.code === 'auth/email-already-in-use') {
+      } else if (err.message?.toLowerCase().includes('already registered')) {
         setError('An account with this email already exists.');
-      } else if (err.code === 'auth/weak-password') {
+      } else if (err.message?.toLowerCase().includes('password')) {
         setError('Password is too weak. Please use at least 6 characters.');
-      } else if (err.code === 'auth/too-many-requests') {
+      } else if (err.message?.toLowerCase().includes('rate limit')) {
         setError('Too many failed attempts. Please try again later.');
       } else {
         setError(err.message || 'An unexpected error occurred. Please try again.');

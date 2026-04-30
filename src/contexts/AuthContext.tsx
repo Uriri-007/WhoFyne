@@ -1,130 +1,130 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
+'use client';
 
-interface UserProfile {
-  uid: string;
-  username: string;
-  email: string;
-  avatarUrl: string;
-  gender: string;
-  isUploader: boolean;
-  totalVotesReceived: number;
-}
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import type { User } from '@supabase/supabase-js';
+import { supabase, type Profile } from '../lib/supabase';
 
 interface AuthContextType {
   user: User | null;
-  profile: UserProfile | null;
+  profile: Profile | null;
   loading: boolean;
   isWhitelisted: boolean;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function isAdminEmail(email?: string | null) {
+  const normalized = email?.toLowerCase();
+  return normalized === 'okhaiuri@gmail.com' || normalized === 'ogboumahokhai@gmail.com';
+}
+
+async function getProfile(userId: string) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Profile;
+}
+
+async function getWhitelistStatus(user: User, profile: Profile | null) {
+  if (profile?.is_uploader || isAdminEmail(user.email)) {
+    return true;
+  }
+
+  if (!user.email) {
+    return false;
+  }
+
+  const { data, error } = await supabase
+    .from('whitelist')
+    .select('email')
+    .eq('email', user.email)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return !!data;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isWhitelisted, setIsWhitelisted] = useState(false);
 
-  useEffect(() => {
-    let unsubProfile: (() => void) | null = null;
-    let unsubWhitelist: (() => void) | null = null;
+  const loadUser = async (nextUser: User | null) => {
+    setUser(nextUser);
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // Cleanup existing listeners on auth change
-      if (unsubProfile) { unsubProfile(); unsubProfile = null; }
-      if (unsubWhitelist) { unsubWhitelist(); unsubWhitelist = null; }
-
-      setUser(user);
-      
-      if (user) {
-        const userDocRef = doc(db, 'users', user.uid);
-        try {
-          // Initial profile fetch
-          let currentUserDoc = await getDoc(userDocRef);
-          let currentUserData = currentUserDoc.data() as UserProfile | undefined;
-
-          if (!currentUserDoc.exists()) {
-            const newProfile = {
-              uid: user.uid,
-              // If user joined via Email, the displayName might be empty. But if they set it during signup, it'll be mapped later
-              username: user.displayName || user.email?.split('@')[0] || 'User',
-              email: user.email || '',
-              avatarUrl: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
-              gender: 'prefer_not_to_say',
-              isUploader: false,
-              totalVotesReceived: 0,
-              createdAt: new Date().toISOString()
-            };
-            await setDoc(userDocRef, newProfile);
-            setProfile(newProfile as UserProfile);
-            currentUserData = newProfile as UserProfile;
-          } else {
-            setProfile(currentUserData!);
-          }
-
-          // Real-time profile updates
-          unsubProfile = onSnapshot(userDocRef, (doc) => {
-            if (doc.exists() && auth.currentUser?.uid === user.uid) {
-              setProfile(doc.data() as UserProfile);
-            }
-          }, (error) => {
-            handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
-          });
-
-          // Real-time whitelist updates
-          if (user.email) {
-            const whitelistRef = doc(db, 'whitelist', user.email);
-            unsubWhitelist = onSnapshot(whitelistRef, async (snapshot) => {
-              const isAdminEmail = (email: string | null) => 
-                email === 'okhaiuri@gmail.com' || 
-                email === 'ogboumahokhai@gmail.com' || 
-                email?.includes('admin');
-
-              // Ensure boolean type
-              const whitelisted = !!(snapshot.exists() || (user.email && isAdminEmail(user.email)));
-              setIsWhitelisted(whitelisted);
-              
-              if (whitelisted && currentUserData && !currentUserData.isUploader) {
-                await setDoc(userDocRef, { isUploader: true }, { merge: true });
-              }
-
-              if (!snapshot.exists() && isAdminEmail(user.email)) {
-                await setDoc(whitelistRef, { email: user.email, addedAt: new Date().toISOString() });
-              }
-            });
-          }
-        } catch (error) {
-          handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
-        }
-      } else {
-        setProfile(null);
-        setIsWhitelisted(false);
-      }
+    if (!nextUser) {
+      setProfile(null);
+      setIsWhitelisted(false);
       setLoading(false);
+      return;
+    }
+
+    try {
+      const nextProfile = await getProfile(nextUser.id);
+      const whitelisted = await getWhitelistStatus(nextUser, nextProfile);
+
+      setProfile(nextProfile);
+      setIsWhitelisted(whitelisted);
+    } catch (error) {
+      console.error('Supabase auth/profile error:', error);
+      setProfile(null);
+      setIsWhitelisted(isAdminEmail(nextUser.email));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (isMounted) {
+        loadUser(data.session?.user ?? null);
+      }
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setTimeout(() => {
+        if (isMounted) {
+          loadUser(session?.user ?? null);
+        }
+      }, 0);
     });
 
     return () => {
-      unsubscribe();
-      if (unsubProfile) unsubProfile();
-      if (unsubWhitelist) unsubWhitelist();
+      isMounted = false;
+      data.subscription.unsubscribe();
     };
   }, []);
-  
+
   const loginWithGoogle = async () => {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
-    const provider = new GoogleAuthProvider();
+
     try {
-      await signInWithPopup(auth, provider);
-    } catch (error: any) {
-      if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
-        console.error('Login error:', error);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+
+      if (error) {
         throw error;
       }
     } finally {
@@ -133,11 +133,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await signOut(auth);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      throw error;
+    }
+  };
+
+  const refreshProfile = async () => {
+    if (!user) return;
+
+    const nextProfile = await getProfile(user.id);
+    setProfile(nextProfile);
+    setIsWhitelisted(await getWhitelistStatus(user, nextProfile));
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isWhitelisted, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, profile, loading, isWhitelisted, loginWithGoogle, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

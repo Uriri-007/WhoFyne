@@ -1,14 +1,12 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { collection, query, orderBy, limit, getDocs, startAfter, doc, runTransaction, onSnapshot, where } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 
 import Image from 'next/image';
 import { Share2, ThumbsUp, ThumbsDown } from 'lucide-react';
-import { CardSkeleton } from '@/src/components/Skeleton';
 import { motion } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
+import { getDefaultAvatar, supabase, type UploadRow } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
 
@@ -16,7 +14,7 @@ interface Upload {
   id: string;
   uploaderId: string;
   uploaderName: string;
-  uploaderAvatar?: string;
+  uploaderAvatar?: string | null;
   imageUrl: string;
   title: string;
   upvotes: number;
@@ -29,37 +27,60 @@ export default function Home() {
   const { user } = useAuth();
   const router = useRouter();
   const [uploads, setUploads] = useState<Upload[]>([]);
-  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [lastCreatedAt, setLastCreatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [votingIds, setVotingIds] = useState<Set<string>>(new Set());
   const observer = useRef<IntersectionObserver | null>(null);
 
-  // Fetch user's votes
+  const mapUpload = (row: UploadRow): Upload => ({
+    id: row.id,
+    uploaderId: row.uploader_id,
+    uploaderName: row.profiles?.username || 'Unknown curator',
+    uploaderAvatar: row.profiles?.avatar_url,
+    imageUrl: row.image_url,
+    title: row.title,
+    upvotes: row.upvotes,
+    downvotes: row.downvotes,
+    totalVotes: row.total_votes,
+    createdAt: row.created_at,
+  });
+
   useEffect(() => {
     if (!user) {
       setUserVotes({});
       return;
     }
 
-    const q = query(
-      collection(db, 'votes'), 
-      where('userId', '==', user.uid)
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const currentUser = user;
+    let active = true;
+
+    async function fetchUserVotes() {
+      const { data, error } = await supabase
+        .from('votes')
+        .select('upload_id, type')
+        .eq('user_id', currentUser.id);
+
+      if (error) {
+        console.error('Failed to fetch votes:', error);
+        return;
+      }
+
+      if (!active) return;
+
       const votes: Record<string, 'up' | 'down'> = {};
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        votes[data.uploadId] = data.type;
+      data.forEach(vote => {
+        votes[vote.upload_id] = vote.type;
       });
       setUserVotes(votes);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'votes');
-    });
+    }
 
-    return unsubscribe;
+    fetchUserVotes();
+
+    return () => {
+      active = false;
+    };
   }, [user]);
 
   const fetchUploads = useCallback(async () => {
@@ -67,34 +88,39 @@ export default function Home() {
     setLoading(true);
 
     try {
-      let q = query(
-        collection(db, 'uploads'),
-        orderBy('createdAt', 'desc'),
-        limit(10)
-      );
+      let request = supabase
+        .from('uploads')
+        .select('*, profiles!uploads_uploader_id_fkey(username, avatar_url)')
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-      if (lastDoc) {
-        q = query(q, startAfter(lastDoc));
+      if (lastCreatedAt) {
+        request = request.lt('created_at', lastCreatedAt);
       }
 
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) {
+      const { data, error } = await request;
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
         setHasMore(false);
       } else {
-        const newUploads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Upload));
+        const newUploads = (data as UploadRow[]).map(mapUpload);
         setUploads(prev => {
           const existingIds = new Set(prev.map(u => u.id));
           const filteredNew = newUploads.filter(u => !existingIds.has(u.id));
           return [...prev, ...filteredNew];
         });
-        setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+        setLastCreatedAt(newUploads[newUploads.length - 1].createdAt);
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, 'uploads');
+      console.error('Failed to fetch uploads:', error);
     } finally {
       setLoading(false);
     }
-  }, [lastDoc, loading, hasMore]);
+  }, [lastCreatedAt, loading, hasMore]);
 
   useEffect(() => {
     fetchUploads();
@@ -137,57 +163,19 @@ export default function Home() {
     ));
 
     try {
-      const voteId = `${user.uid}_${uploadId}`;
-      const voteRef = doc(db, 'votes', voteId);
-      const uploadRef = doc(db, 'uploads', uploadId);
-
-      await runTransaction(db, async (transaction) => {
-        const voteDoc = await transaction.get(voteRef);
-        const uploadDoc = await transaction.get(uploadRef);
-
-        if (voteDoc.exists()) {
-          throw new Error('You have already voted on this image.');
-        }
-
-        if (!uploadDoc.exists()) {
-          throw new Error('Upload not found.');
-        }
-
-        const data = uploadDoc.data() as Upload;
-        if (data.uploaderId === user.uid) {
-          throw new Error('You cannot vote for your own upload.');
-        }
-
-        const uploaderRef = doc(db, 'users', data.uploaderId);
-        const uploaderDoc = await transaction.get(uploaderRef);
-
-        // Create vote
-        transaction.set(voteRef, {
-          userId: user.uid,
-          uploadId,
+      const { error } = await supabase
+        .from('votes')
+        .insert({
+          user_id: user.id,
+          upload_id: uploadId,
           type,
-          createdAt: new Date().toISOString()
         });
 
-        // Update counts
-        const newUpvotes = type === 'up' ? data.upvotes + 1 : data.upvotes;
-        const newDownvotes = type === 'down' ? data.downvotes + 1 : data.downvotes;
-        const newTotal = newUpvotes - newDownvotes;
+      if (error) {
+        throw error;
+      }
 
-        transaction.update(uploadRef, {
-          upvotes: newUpvotes,
-          downvotes: newDownvotes,
-          totalVotes: newTotal
-        });
-
-        // Update uploader's total count
-        if (uploaderDoc.exists()) {
-          const currentTotal = uploaderDoc.data().totalVotesReceived || 0;
-          transaction.update(uploaderRef, {
-            totalVotesReceived: currentTotal + (type === 'up' ? 1 : -1)
-          });
-        }
-      });
+      setUserVotes(prev => ({ ...prev, [uploadId]: type }));
 
     } catch (error: any) {
       // 2. Revert on Error
@@ -198,8 +186,7 @@ export default function Home() {
         alert(error.message);
       } else {
         console.error('Voting error:', error);
-        const reportPath = `votes/${user?.uid}_${uploadId}`;
-        handleFirestoreError(error, OperationType.WRITE, reportPath);
+        alert(error.message || 'Unable to cast vote. Please try again.');
       }
     } finally {
       setVotingIds(prev => {
@@ -268,7 +255,7 @@ export default function Home() {
                 <div className="absolute top-4 left-4 flex items-center gap-2 pr-3 py-1 pl-1 bg-black/40 backdrop-blur-md rounded-full text-white text-xs font-medium border border-white/20 z-10 transition-colors">
                   <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20 relative">
                     <img 
-                      src={upload.uploaderAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${upload.uploaderId}`} 
+                      src={upload.uploaderAvatar || getDefaultAvatar(upload.uploaderId)} 
                       alt={upload.uploaderName}
                       className="w-full h-full object-cover"
                     />

@@ -1,19 +1,18 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { Trophy, TrendingUp, Award } from 'lucide-react';
 import { PageTransition } from '@/src/components/Navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { LeaderboardSkeleton, Skeleton } from '@/src/components/Skeleton';
-import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
+import { getDefaultAvatar, supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 
 interface LeaderboardUser {
-  uid: string;
+  id: string;
   username: string;
-  avatarUrl: string;
-  totalVotesReceived: number;
+  avatar_url: string | null;
+  total_votes_received: number;
 }
 
 export default function Dashboard() {
@@ -22,22 +21,32 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users'),
-      where('isUploader', '==', true),
-      orderBy('totalVotesReceived', 'desc'),
-      limit(10)
-    );
+    let active = true;
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data() } as LeaderboardUser));
-      setLeaderboard(data);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'users');
-    });
+    async function fetchLeaderboard() {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, total_votes_received')
+        .eq('is_uploader', true)
+        .order('total_votes_received', { ascending: false })
+        .limit(10);
 
-    return unsubscribe;
+      if (error) {
+        console.error('Failed to load leaderboard:', error);
+      } else if (active) {
+        setLeaderboard(data as LeaderboardUser[]);
+      }
+
+      if (active) {
+        setLoading(false);
+      }
+    }
+
+    fetchLeaderboard();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (loading) {
@@ -68,11 +77,11 @@ export default function Dashboard() {
 
   const chartData = leaderboard.map(u => ({
     name: u.username,
-    votes: u.totalVotesReceived,
-    isMe: u.uid === profile?.uid
+    votes: u.total_votes_received,
+    isMe: u.id === profile?.id
   }));
 
-  const userRank = profile?.isUploader ? leaderboard.findIndex(u => u.uid === profile?.uid) + 1 : 0;
+  const userRank = profile?.is_uploader ? leaderboard.findIndex(u => u.id === profile?.id) + 1 : 0;
 
   return (
     <PageTransition>
@@ -90,7 +99,7 @@ export default function Dashboard() {
                 <TrendingUp className="w-48 h-48" />
               </div>
               <p className="text-indigo-100 text-sm font-medium uppercase tracking-wider mb-2">Your Impact</p>
-              <h2 className="text-5xl font-bold mb-6">{profile?.totalVotesReceived || 0}</h2>
+              <h2 className="text-5xl font-bold mb-6">{profile?.total_votes_received || 0}</h2>
               <div className="flex items-center gap-4 text-sm font-medium">
                 <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur-sm">
                   <Award className="w-4 h-4" />
@@ -106,11 +115,11 @@ export default function Dashboard() {
               </h3>
               <div className="space-y-4">
                 {leaderboard.slice(0, 5).map((user, idx) => (
-                  <div key={user.uid} className="flex items-center justify-between group">
+                  <div key={user.id} className="flex items-center justify-between group">
                     <div className="flex items-center gap-3">
                       <div className="relative">
                         <img 
-                          src={user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} 
+                          src={user.avatar_url || getDefaultAvatar(user.id)} 
                           alt={user.username} 
                           className="w-10 h-10 rounded-full border border-neutral-100 dark:border-neutral-800 transition-colors" 
                         />
@@ -118,12 +127,12 @@ export default function Dashboard() {
                           {idx + 1}
                         </span>
                       </div>
-                      <span className={`text-sm font-medium transition-colors ${user.uid === profile?.uid ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                      <span className={`text-sm font-medium transition-colors ${user.id === profile?.id ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-neutral-700 dark:text-neutral-300'}`}>
                         {user.username}
                       </span>
                     </div>
                     <span className="text-sm font-mono text-neutral-400 dark:text-neutral-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                      {user.totalVotesReceived}
+                      {user.total_votes_received}
                     </span>
                   </div>
                 ))}

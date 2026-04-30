@@ -2,10 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, doc, writeBatch, getDoc } from 'firebase/firestore';
 import { Upload as UploadIcon, X, Check, Loader2, Sparkles } from 'lucide-react';
-import { motion } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
+import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
 
@@ -21,14 +19,37 @@ export default function Upload() {
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  function dataUrlToBlob(dataUrl: string) {
+    const [metadata, base64] = dataUrl.split(',');
+    const mimeMatch = metadata.match(/data:(.*);base64/);
+    const mimeType = mimeMatch?.[1] || 'image/webp';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    return new Blob([bytes], { type: mimeType });
+  }
+
   useEffect(() => {
     async function checkLimit() {
       if (!user) return;
       const today = new Date().toISOString().split('T')[0];
-      const logRef = doc(db, 'daily_upload_log', `${user.uid}_${today}`);
       try {
-        const logDoc = await getDoc(logRef);
-        if (logDoc.exists()) {
+        const { data, error } = await supabase
+          .from('uploads')
+          .select('id')
+          .eq('uploader_id', user.id)
+          .eq('day_key', today)
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+
+        if (data) {
           setCanUpload(false);
         }
       } catch (error) {
@@ -119,41 +140,44 @@ export default function Upload() {
       setProgress(70);
 
       const today = new Date().toISOString().split('T')[0];
-      const dayKey = today;
-      const uploadId = doc(collection(db, 'uploads')).id;
+      const storagePath = `${user.id}/${today}-${crypto.randomUUID()}.webp`;
+      const imageBlob = dataUrlToBlob(optimizedBase64);
 
-      const uploadData = {
-        uploaderId: user.uid,
-        uploaderName: profile.username,
-        uploaderAvatar: profile.avatarUrl,
-        imageUrl: optimizedBase64,
-        title: title,
-        upvotes: 0,
-        downvotes: 0,
-        totalVotes: 0,
-        dayKey: dayKey,
-        createdAt: new Date().toISOString()
-      };
+      const { error: storageError } = await supabase.storage
+        .from('uploads')
+        .upload(storagePath, imageBlob, {
+          contentType: 'image/webp',
+          cacheControl: '31536000',
+          upsert: false,
+        });
 
-      const batch = writeBatch(db);
+      if (storageError) {
+        throw storageError;
+      }
 
-      // Upload document
-      batch.set(doc(db, 'uploads', uploadId), uploadData);
+      const { data: publicUrlData } = supabase.storage
+        .from('uploads')
+        .getPublicUrl(storagePath);
 
-      // Limit log
-      batch.set(doc(db, 'daily_upload_log', `${user.uid}_${dayKey}`), {
-        userId: user.uid,
-        dayKey: dayKey,
-        uploadId: uploadId,
-        createdAt: new Date().toISOString()
+      const { error: uploadError } = await supabase.from('uploads').insert({
+        uploader_id: user.id,
+        image_path: storagePath,
+        image_url: publicUrlData.publicUrl,
+        title,
+        day_key: today,
       });
 
-      await batch.commit();
+      if (uploadError) {
+        await supabase.storage.from('uploads').remove([storagePath]);
+        throw uploadError;
+      }
+
       setProgress(100);
       
       setTimeout(() => router.push('/'), 800);
     } catch (error: any) {
-      handleFirestoreError(error, OperationType.WRITE, `uploads/batch`);
+      console.error('Upload error:', error);
+      alert(error.message || 'Unable to upload image. Please try again.');
     } finally {
       setLoading(false);
     }
