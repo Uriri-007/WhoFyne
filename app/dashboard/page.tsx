@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { Trophy, TrendingUp, Award, UserMinus } from 'lucide-react';
+import { Trophy, TrendingUp, Award } from 'lucide-react';
 import { PageTransition } from '@/src/components/Navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { LeaderboardSkeleton, Skeleton } from '@/src/components/Skeleton';
@@ -135,7 +135,7 @@ export default function Dashboard() {
               <div className="bg-neutral-100 dark:bg-neutral-800/50 rounded-3xl p-8 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-800 transition-colors border-dashed">
                 <div className="flex items-start gap-4">
                   <div className="p-3 bg-white dark:bg-neutral-800 rounded-2xl shadow-sm">
-                    <UserMinus className="w-6 h-6 text-neutral-400" />
+                    <Award className="w-6 h-6 text-neutral-400" />
                   </div>
                   <div>
                     <h3 className="font-bold text-neutral-900 dark:text-neutral-100 mb-1">Spectator Mode</h3>
