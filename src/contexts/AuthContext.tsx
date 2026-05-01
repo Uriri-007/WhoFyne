@@ -61,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             gender: 'prefer_not_to_say',
             isUploader: false,
             totalVotesReceived: 0,
+            themePreference: 'system',
             createdAt: new Date().toISOString()
           };
           
@@ -145,9 +146,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const currentUser = data?.session?.user || null;
-        setUser(currentUser);
         
         if (currentUser) {
+          setUser(currentUser);
           await fetchProfileAndWhitelist(currentUser);
 
           // Subscriptions
@@ -171,34 +172,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .subscribe();
           }
         } else {
+          setUser(null);
           setProfile(null);
           setIsWhitelisted(false);
         }
       } catch (err: any) {
         console.error("Auth initialization error:", err);
+        setUser(null);
+        setProfile(null);
       } finally {
         setLoading(false);
       }
     };
 
     initializeAuth();
+    
+    const handleFocus = () => {
+      // Re-verify session on window focus if we are possibly stale or if auth is missing
+      if (!user && !loading) {
+         supabase.auth.getSession().then(({ data }) => {
+           if (data?.session?.user) {
+             initializeAuth();
+           }
+         });
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
 
     const { data: { subscription: authListener } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const currentUser = session?.user || null;
-      setUser(currentUser);
       
       if (event === 'SIGNED_IN' && currentUser) {
-        setLoading(true);
-        await fetchProfileAndWhitelist(currentUser);
-        setLoading(false);
+        // If we already have a user and profile, don't set loading to true again to avoid flicker/stuck states
+        if (!user || !profile) {
+          setLoading(true);
+          setUser(currentUser);
+          await fetchProfileAndWhitelist(currentUser);
+          setLoading(false);
+        } else {
+          setUser(currentUser);
+        }
       } else if (event === 'SIGNED_OUT') {
+        setUser(null);
         setProfile(null);
         setIsWhitelisted(false);
+        setLoading(false);
+      } else if (event === 'TOKEN_REFRESHED') {
+        setUser(currentUser);
       }
     });
 
     return () => {
       authListener.unsubscribe();
+      window.removeEventListener('focus', handleFocus);
       if (profileSubscription) supabase.removeChannel(profileSubscription);
       if (whitelistSubscription) supabase.removeChannel(whitelistSubscription);
     };

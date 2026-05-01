@@ -14,8 +14,10 @@ import { PageTransition } from '@/src/components/Navigation';
 interface Upload {
   id: string;
   uploaderId: string;
-  uploaderName: string;
-  uploaderAvatar?: string;
+  uploader: {
+    username: string;
+    avatarUrl: string;
+  };
   imageUrl: string;
   title: string;
   upvotes: number;
@@ -85,7 +87,7 @@ export default function Home() {
 
       const { data, error, count } = await supabase
         .from('uploads')
-        .select('*', { count: 'exact' })
+        .select('*, uploader:users(username, avatarUrl)', { count: 'exact' })
         .order('createdAt', { ascending: false })
         .range(page * 10, (page + 1) * 10 - 1);
 
@@ -243,8 +245,8 @@ export default function Home() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `WhoFyne • ${upload.title || 'Untitled'}`,
-          text: `Check out ${upload.title || 'this masterpiece'} by curator ${upload.uploaderName} with ${upload.totalVotes} votes on WhoFyne!`,
+          title: `${upload.title || 'Untitled Capture'} • Whofyne`,
+          text: `Check out this capture by ${upload.uploader?.username || 'a curator'} on WhoFyne gallery! It has ${upload.totalVotes} votes.`,
           url
         });
       } catch (error: any) {
@@ -294,14 +296,14 @@ export default function Home() {
                 
                 {/* Uploader Badge */}
                 <div className="absolute top-4 left-4 flex items-center gap-2 pr-3 py-1 pl-1 bg-black/40 backdrop-blur-md rounded-full text-white text-xs font-medium border border-white/20 z-10 transition-colors">
-                  <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20 relative">
+                   <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20 relative bg-neutral-800">
                     <img 
-                      src={upload.uploaderAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${upload.uploaderId}`} 
-                      alt={upload.uploaderName}
+                      src={upload.uploader?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${upload.uploaderId}`} 
+                      alt={upload.uploader?.username || 'Uploader'}
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <span>{upload.uploaderName}</span>
+                  <span>{upload.uploader?.username || 'Curator'}</span>
                 </div>
 
                 {/* Share Button */}

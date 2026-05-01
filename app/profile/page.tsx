@@ -36,8 +36,12 @@ export default function Profile() {
       setUsername(profile.username || '');
       setGender(profile.gender || 'prefer_not_to_say');
       setAvatarUrl(profile.avatarUrl || '');
+      
+      if (mounted && profile.themePreference) {
+        setTheme(profile.themePreference);
+      }
     }
-  }, [profile]);
+  }, [profile, mounted, setTheme]);
 
   if (authLoading || !user || !profile) {
     return <ProfileSkeleton />;
@@ -54,7 +58,8 @@ export default function Profile() {
         .update({
           username,
           gender,
-          avatarUrl
+          avatarUrl,
+          themePreference: theme
         })
         .eq('id', user.id);
 

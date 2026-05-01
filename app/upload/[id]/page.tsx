@@ -12,7 +12,7 @@ async function getUpload(id: string) {
   try {
     const { data, error } = await supabase
       .from('uploads')
-      .select('*')
+      .select('*, uploader:users(username, avatarUrl)')
       .eq('id', id)
       .single();
       
@@ -39,8 +39,8 @@ export async function generateMetadata(
   }
 
   const appName = "WhoFyne";
-  const title = `${upload.title || 'Untitled Capture'} • curator: ${upload.uploaderName} | ${appName}`;
-  const description = `This masterpiece has ${upload.totalVotes} total votes on ${appName}. Check it out, share the vibrance, and cast your vote!`;
+  const title = `${upload.title || 'Untitled Capture'} • curator: ${upload.uploader?.username || 'Curator'} | ${appName}`;
+  const description = `${upload.title || 'This capture'} was curated by ${upload.uploader?.username || 'a member'}. It has gained ${upload.totalVotes} total votes on ${appName}. Check out the vibrant gallery, cast your vote, and join our creative community!`;
 
   return {
     title: title,
@@ -125,16 +125,16 @@ export default async function Page({ params }: Props) {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-neutral-100 dark:border-neutral-800 shadow-sm transition-colors">
+                  <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-neutral-100 dark:border-neutral-800 shadow-sm transition-colors bg-neutral-100 dark:bg-neutral-800">
                     <img 
-                      src={upload.uploaderAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${upload.uploaderId}`} 
-                      alt={upload.uploaderName}
+                      src={upload.uploader?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${upload.uploaderId}`} 
+                      alt={upload.uploader?.username || 'Uploader'}
                       className="w-full h-full object-cover"
                     />
                   </div>
                   <div>
                     <p className="text-xs font-bold uppercase tracking-widest text-neutral-400 dark:text-neutral-500 transition-colors">Curator</p>
-                    <p className="font-bold text-neutral-900 dark:text-neutral-50 transition-colors">{upload.uploaderName}</p>
+                    <p className="font-bold text-neutral-900 dark:text-neutral-50 transition-colors">{upload.uploader?.username || 'Anonymous'}</p>
                   </div>
                 </div>
                 <div className="px-4 py-2 bg-neutral-100 dark:bg-neutral-800 rounded-2xl font-mono text-xs font-bold text-neutral-500 dark:text-neutral-400 transition-colors">
