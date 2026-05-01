@@ -238,6 +238,14 @@ create trigger after_vote_insert
 after insert on public.votes
 for each row execute function public.apply_vote_counts();
 
+-- Enable Realtime for profiles to support the dashboard leaderboard
+begin;
+  -- Remove the table from the publication if it exists to avoid duplicates
+  alter publication supabase_realtime drop table if exists public.profiles;
+  -- Add the table to the publication
+  alter publication supabase_realtime add table public.profiles;
+commit;
+
 alter table public.profiles enable row level security;
 alter table public.whitelist enable row level security;
 alter table public.uploads enable row level security;
