@@ -2,12 +2,12 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/src/lib/supabase';
 
 import Image from 'next/image';
 import { Share2, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { CardSkeleton } from '@/src/components/Skeleton';
 import { motion } from 'motion/react';
-import { getDefaultAvatar, supabase, type UploadRow } from '@/src/lib/supabase';
-import { castVote } from '@/src/lib/votes';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
 
@@ -15,7 +15,7 @@ interface Upload {
   id: string;
   uploaderId: string;
   uploaderName: string;
-  uploaderAvatar?: string | null;
+  uploaderAvatar?: string;
   imageUrl: string;
   title: string;
   upvotes: number;
@@ -28,59 +28,47 @@ export default function Home() {
   const { user } = useAuth();
   const router = useRouter();
   const [uploads, setUploads] = useState<Upload[]>([]);
-  const [lastCreatedAt, setLastCreatedAt] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [votingIds, setVotingIds] = useState<Set<string>>(new Set());
   const observer = useRef<IntersectionObserver | null>(null);
 
-  const mapUpload = (row: UploadRow): Upload => ({
-    id: row.id,
-    uploaderId: row.uploader_id,
-    uploaderName: row.profiles?.username || 'Unknown curator',
-    uploaderAvatar: row.profiles?.avatar_url,
-    imageUrl: row.image_url,
-    title: row.title,
-    upvotes: row.upvotes,
-    downvotes: row.downvotes,
-    totalVotes: row.total_votes,
-    createdAt: row.created_at,
-  });
-
+  // Fetch user's votes
   useEffect(() => {
     if (!user) {
       setUserVotes({});
       return;
     }
 
-    const currentUser = user;
-    let active = true;
-
-    async function fetchUserVotes() {
+    const fetchVotes = async () => {
       const { data, error } = await supabase
         .from('votes')
-        .select('upload_id, type')
-        .eq('user_id', currentUser.id);
-
-      if (error) {
-        console.error('Failed to fetch votes:', error);
-        return;
+        .select('*')
+        .eq('userId', user.id);
+        
+      if (!error && data) {
+        const votes: Record<string, 'up' | 'down'> = {};
+        data.forEach(vote => {
+          votes[vote.uploadId] = vote.type;
+        });
+        setUserVotes(votes);
       }
+    };
+    
+    fetchVotes();
 
-      if (!active) return;
-
-      const votes: Record<string, 'up' | 'down'> = {};
-      data.forEach(vote => {
-        votes[vote.upload_id] = vote.type;
-      });
-      setUserVotes(votes);
-    }
-
-    fetchUserVotes();
+    const channel = supabase
+      .channel('public:votes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'votes', filter: `userId=eq.${user.id}` }, (payload) => {
+        // Just refetch or process payload to be safe
+        fetchVotes();
+      })
+      .subscribe();
 
     return () => {
-      active = false;
+      supabase.removeChannel(channel);
     };
   }, [user]);
 
@@ -89,39 +77,35 @@ export default function Home() {
     setLoading(true);
 
     try {
-      let request = supabase
+      const { data, error, count } = await supabase
         .from('uploads')
-        .select('*, profiles!uploads_uploader_id_fkey(username, avatar_url)')
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .select('*', { count: 'exact' })
+        .order('createdAt', { ascending: false })
+        .range(page * 10, (page + 1) * 10 - 1);
 
-      if (lastCreatedAt) {
-        request = request.lt('created_at', lastCreatedAt);
-      }
-
-      const { data, error } = await request;
-
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       if (!data || data.length === 0) {
         setHasMore(false);
       } else {
-        const newUploads = (data as UploadRow[]).map(mapUpload);
+        const newUploads = data as Upload[];
         setUploads(prev => {
           const existingIds = new Set(prev.map(u => u.id));
           const filteredNew = newUploads.filter(u => !existingIds.has(u.id));
           return [...prev, ...filteredNew];
         });
-        setLastCreatedAt(newUploads[newUploads.length - 1].createdAt);
+        setPage(p => p + 1);
+        
+        if (count !== null && uploads.length + newUploads.length >= count) {
+           setHasMore(false);
+        }
       }
     } catch (error) {
-      console.error('Failed to fetch uploads:', error);
+      console.error('Error fetching uploads:', error);
     } finally {
       setLoading(false);
     }
-  }, [lastCreatedAt, loading, hasMore]);
+  }, [page, loading, hasMore, uploads.length]);
 
   useEffect(() => {
     fetchUploads();
@@ -164,18 +148,80 @@ export default function Home() {
     ));
 
     try {
-      await castVote(user.id, uploadId, type);
-      setUserVotes(prev => ({ ...prev, [uploadId]: type }));
+      const voteId = `${user.id}_${uploadId}`;
+      const upload = originalUploads.find(u => u.id === uploadId);
+
+      if (!upload) throw new Error('Upload not found.');
+
+      if (upload.uploaderId === user.id) {
+        throw new Error('You cannot vote for your own upload.');
+      }
+
+      // Check if already voted server-side
+      const { data: existingVote } = await supabase
+        .from('votes')
+        .select('*')
+        .eq('userId', user.id)
+        .eq('uploadId', uploadId)
+        .single();
+        
+      if (existingVote) {
+        throw new Error('You have already voted on this image.');
+      }
+
+      // Using an RPC function would be best, but doing it in sequential steps due to simple setup
+      // Note: In production this should be a stored procedure or transaction!
+      const { error: insertError } = await supabase
+        .from('votes')
+        .insert([{
+          id: voteId,
+          userId: user.id,
+          uploadId,
+          type,
+          createdAt: new Date().toISOString()
+        }]);
+
+      if (insertError) throw insertError;
+
+      // Update counts using Postgres RPC or straightforward update if we assume no huge concurrency
+       const newUpvotes = type === 'up' ? upload.upvotes + 1 : upload.upvotes;
+       const newDownvotes = type === 'down' ? upload.downvotes + 1 : upload.downvotes;
+       const newTotal = newUpvotes - newDownvotes;
+
+       await supabase
+         .from('uploads')
+         .update({
+           upvotes: newUpvotes,
+           downvotes: newDownvotes,
+           totalVotes: newTotal
+         })
+         .eq('id', uploadId);
+
+       // Update uploader's total count
+       const { data: uploaderDoc } = await supabase
+         .from('users')
+         .select('totalVotesReceived')
+         .eq('uid', upload.uploaderId)
+         .single();
+         
+       if (uploaderDoc) {
+          const currentTotal = uploaderDoc.totalVotesReceived || 0;
+          await supabase
+            .from('users')
+            .update({
+              totalVotesReceived: currentTotal + (type === 'up' ? 1 : -1)
+            })
+            .eq('uid', upload.uploaderId);
+       }
+
     } catch (error: any) {
       // 2. Revert on Error
       setUploads(originalUploads);
       
-      // Don't alert for common errors that might be expected (like already voted)
-      if (error.message.includes('already voted') || error.message.includes('own upload')) {
+      if (error.message?.includes('already voted') || error.message?.includes('own upload')) {
         alert(error.message);
       } else {
         console.error('Voting error:', error);
-        alert(error.message || 'Unable to cast vote. Please try again.');
       }
     } finally {
       setVotingIds(prev => {
@@ -232,25 +278,21 @@ export default function Home() {
               <div className="aspect-[4/5] overflow-hidden bg-neutral-100 dark:bg-neutral-800 relative">
                 <Image
                   src={upload.imageUrl}
-                  alt={upload.title || 'Untitled vibrant capture'}
+                  alt={upload.title}
                   fill
                   className="object-cover transition-transform duration-700 group-hover:scale-110"
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                  priority={index < 2}
-                  loading={index < 2 ? undefined : 'lazy'}
-                  quality={85}
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  priority={index < 3}
                   referrerPolicy="no-referrer"
                 />
                 
                 {/* Uploader Badge */}
                 <div className="absolute top-4 left-4 flex items-center gap-2 pr-3 py-1 pl-1 bg-black/40 backdrop-blur-md rounded-full text-white text-xs font-medium border border-white/20 z-10 transition-colors">
                   <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20 relative">
-                    <Image
-                      src={upload.uploaderAvatar || getDefaultAvatar(upload.uploaderId)} 
+                    <img 
+                      src={upload.uploaderAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${upload.uploaderId}`} 
                       alt={upload.uploaderName}
-                      fill
-                      sizes="24px"
-                      className="object-cover"
+                      className="w-full h-full object-cover"
                     />
                   </div>
                   <span>{upload.uploaderName}</span>

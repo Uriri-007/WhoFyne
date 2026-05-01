@@ -2,17 +2,16 @@
 
 import React from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { Home, LayoutDashboard, LogIn, LogOut, Upload, User } from 'lucide-react';
+import { Home, LayoutDashboard, User, Upload, LogOut, LogIn } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
-import { getDefaultAvatar } from '../lib/supabase';
 
 export default function Navbar() {
   const { user, profile, isWhitelisted, logout } = useAuth();
   const pathname = usePathname();
 
+  // Hide navbar on login page
   if (pathname === '/login') return null;
 
   const isActive = (path: string) => pathname === path;
@@ -70,18 +69,15 @@ export default function Navbar() {
         </Link>
       ) : (
         <div className="flex items-center gap-2 ml-2 pl-2 border-l border-neutral-200 dark:border-neutral-800 transition-colors">
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-neutral-200 dark:border-neutral-700 transition-colors bg-white dark:bg-neutral-800 relative">
-            <Image
-              src={profile?.avatar_url || user.user_metadata?.avatar_url || user.user_metadata?.picture || getDefaultAvatar(user.id)}
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-neutral-200 dark:border-neutral-700 transition-colors bg-white dark:bg-neutral-800">
+            <img
+              src={profile?.avatarUrl || user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`}
               alt="User"
-              fill
-              sizes="32px"
-              className="object-cover"
+              className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
             />
           </div>
           <button
-            type="button"
             onClick={logout}
             className="p-2 text-neutral-500 dark:text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors rounded-full hover:bg-red-50 dark:hover:bg-red-950/30"
           >

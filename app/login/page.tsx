@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { PageTransition } from '@/src/components/Navigation';
-import { Mail, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, ArrowRight, Github } from 'lucide-react';
 import { supabase } from '@/src/lib/supabase';
 
 export default function LoginPage() {
@@ -26,47 +26,43 @@ export default function LoginPage() {
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        // Sign Up
+        const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { username },
-            emailRedirectTo: `${window.location.origin}/profile`,
-          },
+            data: {
+              full_name: username,
+            }
+          }
         });
-
-        if (error) {
-          throw error;
+        
+        if (signUpError) throw signUpError;
+        if (data.session) {
+          router.push('/profile'); // Redirect to profile to fill out details
+        } else {
+          setError('Please check your email to verify your account.');
         }
-
-        router.push('/profile'); // Redirect to profile to fill out details
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        // Login
+        const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
-
-        if (error) {
-          throw error;
-        }
-
-        router.push('/dashboard'); // Redirect to dashboard
+        
+        if (signInError) throw signInError;
+        router.push('/'); // Redirect home
       }
     } catch (err: any) {
-      // Don't log expected auth errors to console to avoid cluttering and confusion
-      if (err.code !== 'auth/invalid-credential' && err.code !== 'auth/user-not-found' && err.code !== 'auth/wrong-password') {
-        console.error('Authentication error:', err);
-      }
-      
-      if (err.message?.toLowerCase().includes('provider is not enabled')) {
-        setError('Email/Password sign-up is not allowed. Please check your Supabase auth settings.');
-      } else if (err.message?.toLowerCase().includes('invalid login credentials')) {
+      if (err.message.includes('allow email/password')) {
+        setError('Email/Password sign-up is not allowed. Please check your Supabase settings.');
+      } else if (err.message.includes('Invalid login credentials')) {
         setError('Incorrect email or password. Please try again.');
-      } else if (err.message?.toLowerCase().includes('already registered')) {
+      } else if (err.message.includes('already registered')) {
         setError('An account with this email already exists.');
-      } else if (err.message?.toLowerCase().includes('password')) {
+      } else if (err.message.includes('weak')) {
         setError('Password is too weak. Please use at least 6 characters.');
-      } else if (err.message?.toLowerCase().includes('rate limit')) {
+      } else if (err.status === 429) {
         setError('Too many failed attempts. Please try again later.');
       } else {
         setError(err.message || 'An unexpected error occurred. Please try again.');
@@ -81,7 +77,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await loginWithGoogle();
-      router.push('/dashboard');
+      router.push('/');
     } catch (err: any) {
       setError(err.message || 'Google authentication failed.');
     } finally {
