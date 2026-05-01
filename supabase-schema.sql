@@ -127,3 +127,8 @@ alter publication supabase_realtime add table public.users;
 alter publication supabase_realtime add table public.whitelist;
 alter publication supabase_realtime add table public.votes;
 alter publication supabase_realtime add table public.uploads;
+
+-- 7. Grant Permissions (Fixes "permission denied" errors)
+grant usage on schema public to anon, authenticated;
+grant all privileges on all tables in schema public to anon, authenticated;
+grant all privileges on all sequences in schema public to anon, authenticated;

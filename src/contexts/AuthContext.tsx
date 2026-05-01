@@ -43,10 +43,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('uid', currentUser.id)
           .single();
 
-        if (profileError && profileError.code === 'PGRST116') {
+        if (profileError || !profileData) {
+          if (profileError && profileError.code !== 'PGRST116') {
+             console.error('Error fetching profile:', profileError);
+          }
           // Profile doesn't exist, create it
           const email = currentUser.email || '';
           const newProfile = {
+            id: currentUser.id,
             uid: currentUser.id,
             username: currentUser.user_metadata?.full_name || email.split('@')[0] || 'User',
             email: email,
@@ -54,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             gender: 'prefer_not_to_say',
             isUploader: false,
             totalVotesReceived: 0,
-            created_at: new Date().toISOString()
+            createdAt: new Date().toISOString()
           };
           
           const { data: createdProfile, error: insertError } = await supabase
@@ -110,6 +114,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       } catch (error) {
         console.error('Error in fetchProfileAndWhitelist:', error);
+        // Fallback to minimal profile if everything fails so UI doesn't hang
+        setProfile({
+          id: currentUser.id,
+          uid: currentUser.id,
+          username: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'User',
+          email: currentUser.email || '',
+          avatarUrl: currentUser.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.id}`,
+          gender: 'prefer_not_to_say',
+          isUploader: false,
+          totalVotesReceived: 0,
+          createdAt: new Date().toISOString()
+        } as any);
       }
     };
 

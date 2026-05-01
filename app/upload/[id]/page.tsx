@@ -111,8 +111,8 @@ export default async function Page({ params }: Props) {
             <div className="bg-white dark:bg-neutral-900 rounded-[40px] overflow-hidden shadow-2xl border border-neutral-100 dark:border-neutral-800 transition-colors">
               <div className="aspect-square sm:aspect-[4/3] lg:aspect-auto overflow-hidden bg-neutral-100 dark:bg-neutral-800 relative min-h-[60vh] flex items-center justify-center transition-colors">
                 <img 
-                  src={upload.imageUrl} 
-                  alt={upload.title} 
+                  src={upload.imageUrl || "https://picsum.photos/seed/placeholder/400/500"} 
+                  alt={upload.title || "Upload"} 
                   className="w-full h-full object-contain max-h-[80vh]"
                   referrerPolicy="no-referrer"
                 />

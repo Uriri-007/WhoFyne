@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/src/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/src/lib/supabase';
 
 import Image from 'next/image';
 import { Share2, ThumbsUp, ThumbsDown } from 'lucide-react';
@@ -77,13 +77,19 @@ export default function Home() {
     setLoading(true);
 
     try {
+      if (!isSupabaseConfigured) {
+        setHasMore(false);
+        setLoading(false);
+        return;
+      }
+
       const { data, error, count } = await supabase
         .from('uploads')
         .select('*', { count: 'exact' })
         .order('createdAt', { ascending: false })
         .range(page * 10, (page + 1) * 10 - 1);
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
 
       if (!data || data.length === 0) {
         setHasMore(false);
@@ -100,8 +106,8 @@ export default function Home() {
            setHasMore(false);
         }
       }
-    } catch (error) {
-      console.error('Error fetching uploads:', error);
+    } catch (error: any) {
+      console.error('Error fetching uploads:', error.message || error);
     } finally {
       setLoading(false);
     }
@@ -277,8 +283,8 @@ export default function Home() {
             >
               <div className="aspect-[4/5] overflow-hidden bg-neutral-100 dark:bg-neutral-800 relative">
                 <Image
-                  src={upload.imageUrl}
-                  alt={upload.title}
+                  src={upload.imageUrl || "https://picsum.photos/seed/placeholder/400/500"}
+                  alt={upload.title || 'Upload'}
                   fill
                   className="object-cover transition-transform duration-700 group-hover:scale-110"
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"

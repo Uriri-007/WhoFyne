@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/src/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/src/lib/supabase';
 import { Trophy, TrendingUp, Award } from 'lucide-react';
 import { PageTransition } from '@/src/components/Navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -22,6 +22,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
+      if (!isSupabaseConfigured) {
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -32,7 +37,7 @@ export default function Dashboard() {
       if (!error && data) {
         setLeaderboard(data as LeaderboardUser[]);
       } else if (error) {
-        console.error('Error fetching leaderboard:', error);
+        console.error('Error fetching leaderboard:', error.message || error);
       }
       setLoading(false);
     };
