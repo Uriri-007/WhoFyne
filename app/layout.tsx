@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
-    apple: "/icon.svg",
+    apple: "/icon.jpeg",
   },
   keywords: ["photography", "voting", "gallery", "curated", "vibrance"],
   authors: [{ name: "Uri Okhai" }],
