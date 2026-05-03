@@ -140,6 +140,9 @@ export default function Home() {
       return; // Already voted or voting in progress
     }
 
+    const upload = uploads.find(u => u.id === uploadId);
+    if (!upload) return;
+
     setVotingIds(prev => new Set(prev).add(uploadId));
 
     // 1. Optimistic UI Update
@@ -156,72 +159,12 @@ export default function Home() {
     ));
 
     try {
-      const voteId = `${user.id}_${uploadId}`;
-      const upload = originalUploads.find(u => u.id === uploadId);
-
-      if (!upload) throw new Error('Upload not found.');
-
-      if (upload.uploaderId === user.id) {
-        throw new Error('You cannot vote for your own upload.');
+      const { castVote } = await import('@/src/lib/voting');
+      const result = await castVote(user.id, uploadId, type, upload.uploaderId);
+      
+      if (result.success) {
+        setUserVotes(prev => ({ ...prev, [uploadId]: type }));
       }
-
-      // Check if already voted server-side
-      const { data: existingVote } = await supabase
-        .from('votes')
-        .select('*')
-        .eq('userId', user.id)
-        .eq('uploadId', uploadId)
-        .single();
-        
-      if (existingVote) {
-        throw new Error('You have already voted on this image.');
-      }
-
-      // Using an RPC function would be best, but doing it in sequential steps due to simple setup
-      // Note: In production this should be a stored procedure or transaction!
-      const { error: insertError } = await supabase
-        .from('votes')
-        .insert([{
-          id: voteId,
-          userId: user.id,
-          uploadId,
-          type,
-          createdAt: new Date().toISOString()
-        }]);
-
-      if (insertError) throw insertError;
-
-      // Update counts using Postgres RPC or straightforward update if we assume no huge concurrency
-       const newUpvotes = type === 'up' ? upload.upvotes + 1 : upload.upvotes;
-       const newDownvotes = type === 'down' ? upload.downvotes + 1 : upload.downvotes;
-       const newTotal = newUpvotes - newDownvotes;
-
-       await supabase
-         .from('uploads')
-         .update({
-           upvotes: newUpvotes,
-           downvotes: newDownvotes,
-           totalVotes: newTotal
-         })
-         .eq('id', uploadId);
-
-       // Update uploader's total count
-       const { data: uploaderDoc } = await supabase
-         .from('users')
-         .select('totalVotesReceived')
-         .eq('id', upload.uploaderId)
-         .single();
-         
-       if (uploaderDoc) {
-          const currentTotal = uploaderDoc.totalVotesReceived || 0;
-          await supabase
-            .from('users')
-            .update({
-              totalVotesReceived: currentTotal + (type === 'up' ? 1 : -1)
-            })
-            .eq('id', upload.uploaderId);
-       }
-
     } catch (error: any) {
       // 2. Revert on Error
       setUploads(originalUploads);

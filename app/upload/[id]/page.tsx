@@ -146,7 +146,7 @@ export default async function Page({ params }: Props) {
                 <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 dark:text-neutral-50 tracking-tight leading-tight transition-colors">
                   {upload.title || 'Untitled Masterpiece'}
                 </h1>
-                <p className="text-sm sm:text-base text-neutral-50 dark:text-neutral-400 leading-relaxed transition-colors opacity-70">
+                <p className="text-sm sm:text-base text-neutral-600 dark:text-neutral-400 leading-relaxed transition-colors opacity-70">
                   Every capture tells a story of vibrance and community. Cast your vote to influence the leaderboard.
                 </p>
               </div>
