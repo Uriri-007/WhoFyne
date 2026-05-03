@@ -20,8 +20,10 @@ export default function Dashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [actualRank, setActualRank] = useState(0);
+
   useEffect(() => {
-    const fetchLeaderboard = async () => {
+    const fetchData = async () => {
       if (!isSupabaseConfigured) {
         setLoading(false);
         return;
@@ -39,15 +41,32 @@ export default function Dashboard() {
       } else if (error) {
         console.error('Error fetching leaderboard:', error.message || error);
       }
+
+      if (profile?.isUploader) {
+        const { count, error: countError } = await supabase
+          .from('users')
+          .select('id', { count: 'exact', head: true })
+          .eq('isUploader', true)
+          .gt('totalVotesReceived', profile.totalVotesReceived || 0);
+
+        if (!countError && count !== null) {
+          setActualRank(count + 1);
+        } else {
+          // Fallback to top 10 array if count fails
+          const idx = data?.findIndex(u => u.id === profile.id);
+          if (idx !== undefined && idx >= 0) setActualRank(idx + 1);
+        }
+      }
+
       setLoading(false);
     };
 
-    fetchLeaderboard();
+    fetchData();
 
     const channel = supabase
       .channel('public:users:leaderboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
-        fetchLeaderboard();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+        fetchData();
       })
       .subscribe();
 
@@ -88,8 +107,6 @@ export default function Dashboard() {
     isMe: u.id === profile?.id
   }));
 
-  const userRank = profile?.isUploader ? leaderboard.findIndex(u => u.id === profile?.id) + 1 : 0;
-
   return (
     <PageTransition>
       <div className="max-w-screen-xl mx-auto px-4 pt-8 pb-32">
@@ -110,7 +127,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-4 text-sm font-medium">
                 <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur-sm">
                   <Award className="w-4 h-4" />
-                  Rank {userRank > 0 ? `#${userRank}` : 'N/A'}
+                  Rank {actualRank > 0 ? `#${actualRank}` : 'N/A'}
                 </div>
               </div>
             </div>
@@ -118,10 +135,10 @@ export default function Dashboard() {
             <div className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded-3xl p-8 shadow-sm transition-colors">
               <h3 className="text-lg font-bold mb-6 flex items-center gap-2 dark:text-neutral-100">
                 <Trophy className="w-5 h-5 text-amber-500" />
-                Top Performers
+                Top 10 Performers
               </h3>
               <div className="space-y-4">
-                {leaderboard.slice(0, 5).map((user, idx) => (
+                {leaderboard.map((user, idx) => (
                   <div key={user.id} className="flex items-center justify-between group">
                     <div className="flex items-center gap-3">
                       <div className="relative">
@@ -134,7 +151,7 @@ export default function Dashboard() {
                           {idx + 1}
                         </span>
                       </div>
-                      <span className={`text-sm font-medium transition-colors ${user.id === profile?.id ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                      <span className={`text-sm font-medium truncate max-w-[100px] sm:max-w-[140px] transition-colors ${user.id === profile?.id ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-neutral-700 dark:text-neutral-300'}`}>
                         {user.username}
                       </span>
                     </div>
@@ -148,11 +165,11 @@ export default function Dashboard() {
           </div>
 
           {/* Visualization Card */}
-          <div className="lg:col-span-2 bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded-3xl p-8 shadow-sm h-[500px] flex flex-col transition-colors">
-            <div className="flex items-center justify-between mb-8">
+          <div className="lg:col-span-2 bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded-3xl p-4 sm:p-8 shadow-sm h-[600px] flex flex-col transition-colors overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
               <h3 className="text-lg font-bold flex items-center gap-2 dark:text-neutral-100">
                 <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                Vibrance Leaderboard
+                Top 10 Live Ranking
               </h3>
               <div className="flex items-center gap-4 text-xs font-mono text-neutral-400 dark:text-neutral-500 transition-colors">
                 <div className="flex items-center gap-1.5">
@@ -166,41 +183,47 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="flex-1 w-full min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart id="vibrance-leaderboard-chart" data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#a3a3a3" strokeOpacity={0.2} />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#a3a3a3', fontSize: 10 }}
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#a3a3a3', fontSize: 10 }} 
-                  />
-                  <Tooltip 
-                    cursor={{ fill: 'currentColor', opacity: 0.05 }}
-                    contentStyle={{ 
-                      borderRadius: '16px', 
-                      border: 'none', 
-                      boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      backgroundColor: 'var(--tooltip-bg, #fff)',
-                      color: 'var(--tooltip-color, #000)'
-                    }}
-                  />
-                  <Bar dataKey="votes" radius={[10, 10, 0, 0]} barSize={40}>
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.isMe ? '#fbbf24' : '#4f46e5'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="flex-1 w-full min-h-0 overflow-x-auto custom-scrollbar">
+              <div className="min-w-[500px] h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart id="vibrance-leaderboard-chart" data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#a3a3a3" strokeOpacity={0.2} />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#a3a3a3', fontSize: 10 }}
+                      angle={-45}
+                      textAnchor="end"
+                      dy={10}
+                      dx={-5}
+                      interval={0}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#a3a3a3', fontSize: 10 }} 
+                    />
+                    <Tooltip 
+                      cursor={{ fill: 'currentColor', opacity: 0.05 }}
+                      contentStyle={{ 
+                        borderRadius: '16px', 
+                        border: 'none', 
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        backgroundColor: 'var(--tooltip-bg, #fff)',
+                        color: 'var(--tooltip-color, #000)'
+                      }}
+                    />
+                    <Bar dataKey="votes" radius={[10, 10, 0, 0]} maxBarSize={40}>
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.isMe ? '#fbbf24' : '#4f46e5'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </div>

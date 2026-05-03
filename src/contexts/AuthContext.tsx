@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
 
@@ -32,6 +32,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isWhitelisted, setIsWhitelisted] = useState(false);
+
+  // Use refs to access current state inside closures like onAuthStateChange
+  const userRef = useRef<User | null>(null);
+  const profileRef = useRef<UserProfile | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+    profileRef.current = profile;
+  }, [user, profile]);
 
   useEffect(() => {
     let profileSubscription: any = null;
@@ -225,22 +234,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth();
     
-    const handleFocus = () => {
-      // Re-verify session on window focus if we are possibly stale or if auth is missing
-      if (!user && !loading) {
-         initializeAuth();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-
     const { data: { subscription: authListener } } = supabase.auth.onAuthStateChange(async (event, session) => {
       try {
         const currentUser = session?.user || null;
         
         if (event === 'SIGNED_IN' && currentUser) {
-          // If we already have a user and profile, don't set loading to true again to avoid flicker/stuck states
-          if (!user || !profile) {
+          // Check using refs to avoid stale closure issues
+          if (!userRef.current || !profileRef.current || userRef.current.id !== currentUser.id) {
             setLoading(true);
             setUser(currentUser);
             await fetchProfileAndWhitelist(currentUser);
@@ -253,7 +253,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(null);
           setIsWhitelisted(false);
           setLoading(false);
-        } else if (event === 'TOKEN_REFRESHED') {
+        } else if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
           setUser(currentUser);
         }
       } catch (err: any) {
@@ -266,7 +266,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       authListener.unsubscribe();
-      window.removeEventListener('focus', handleFocus);
       if (profileSubscription) supabase.removeChannel(profileSubscription);
       if (whitelistSubscription) supabase.removeChannel(whitelistSubscription);
     };
