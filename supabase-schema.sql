@@ -118,7 +118,31 @@ create policy "Users can insert their own logs"
 on public.daily_upload_log for insert 
 with check ( auth.uid() = "userId" );
 
--- 6. Setup realtime
+-- 6. Create Notifications Table
+create table public.notifications (
+  id uuid default gen_random_uuid() primary key,
+  "userId" uuid references public.users(id) on delete cascade,
+  message text not null,
+  type text not null, -- 'vote', 'rank_up', 'rank_down'
+  read boolean default false,
+  "createdAt" timestamp with time zone default now()
+);
+
+alter table public.notifications enable row level security;
+
+create policy "Users can view their own notifications" 
+on public.notifications for select 
+using ( auth.uid() = "userId" );
+
+create policy "Anyone can insert notifications" 
+on public.notifications for insert 
+with check ( true );
+
+create policy "Users can update their own notifications" 
+on public.notifications for update 
+using ( auth.uid() = "userId" );
+
+-- 7. Setup realtime
 begin;
   drop publication if exists supabase_realtime;
   create publication supabase_realtime;
@@ -127,11 +151,18 @@ alter publication supabase_realtime add table public.users;
 alter publication supabase_realtime add table public.whitelist;
 alter publication supabase_realtime add table public.votes;
 alter publication supabase_realtime add table public.uploads;
+alter publication supabase_realtime add table public.notifications;
 
--- 7. Grant Permissions (Fixes "permission denied" errors)
+-- 8. Grant Permissions (Fixes "permission denied" errors)
 grant usage on schema public to anon, authenticated;
 grant all privileges on all tables in schema public to anon, authenticated;
 grant all privileges on all sequences in schema public to anon, authenticated;
+
+-- 9. Add Indexes for Performance
+create index users_uploader_votes_idx on public.users ("isUploader", "totalVotesReceived" desc);
+create index notifications_user_id_idx on public.notifications ("userId", "createdAt" desc);
+create index uploads_uploader_id_idx on public.uploads ("uploaderId");
+
 
 -- 8. Setup Supabase Storage
 -- Note: You might need to create the bucket manually in the Supabase Dashboard

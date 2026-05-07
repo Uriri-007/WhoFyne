@@ -3,7 +3,7 @@ const CACHE_NAME = 'whofyne-cache-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/manifest.json',
-  '/icon.jpeg'
+  '/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {

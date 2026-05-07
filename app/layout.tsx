@@ -17,7 +17,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://whofyne.vercel.app'),
+  metadataBase: new URL('https://whofyne.app'),
   title: {
     default: "WhoFyne • Curated Vibrance",
     template: "%s | WhoFyne"
@@ -33,10 +33,10 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
-    apple: "/icon.jpeg",
+    apple: "/icon.svg",
   },
   keywords: ["photography", "voting", "gallery", "curated", "vibrance"],
-  authors: [{ name: "Uri Okhai" }],
+  authors: [{ name: "WhoFyne Community" }],
   openGraph: {
     type: "website",
     locale: "en_US",
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     description: "Discover and vote for the most vibrant captures curated by our community.",
     images: [
       {
-        url: "https://whofyne.vercel.app/whofyne-og.jpeg",
+        url: "https://picsum.photos/seed/whofyne/1200/630", // Using a placeholder instead of missing file
         width: 1200,
         height: 630,
         alt: "WhoFyne Gallery",
@@ -57,7 +57,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "WhoFyne • Curated Vibrance",
     description: "Discover and vote for the most vibrant captures curated by our community.",
-    images: ["https://whofyne.vercel.app/whofyne-og.jpeg"],
+    images: ["https://picsum.photos/seed/whofyne/1200/630"],
   },
 };
 

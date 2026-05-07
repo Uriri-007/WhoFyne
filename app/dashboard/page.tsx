@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '@/src/lib/supabase';
-import { Trophy, TrendingUp, Award } from 'lucide-react';
+import { Trophy, TrendingUp, Award, Bell, CheckCircle2 } from 'lucide-react';
 import { PageTransition } from '@/src/components/Navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { LeaderboardSkeleton, Skeleton } from '@/src/components/Skeleton';
@@ -15,9 +15,18 @@ interface LeaderboardUser {
   totalVotesReceived: number;
 }
 
+interface UserNotification {
+  id: string;
+  message: string;
+  type: string;
+  read: boolean;
+  createdAt: string;
+}
+
 export default function Dashboard() {
   const { profile } = useAuth();
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [actualRank, setActualRank] = useState(0);
@@ -29,6 +38,7 @@ export default function Dashboard() {
         return;
       }
 
+      // Fetch leaderboard
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -43,6 +53,7 @@ export default function Dashboard() {
       }
 
       if (profile?.isUploader) {
+        // Fetch rank
         const { count, error: countError } = await supabase
           .from('users')
           .select('id', { count: 'exact', head: true })
@@ -56,6 +67,18 @@ export default function Dashboard() {
           const idx = data?.findIndex(u => u.id === profile.id);
           if (idx !== undefined && idx >= 0) setActualRank(idx + 1);
         }
+
+        // Fetch notifications
+        const { data: notifData } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('userId', profile.id)
+          .order('createdAt', { ascending: false })
+          .limit(20);
+
+        if (notifData) {
+          setNotifications(notifData as UserNotification[]);
+        }
       }
 
       setLoading(false);
@@ -63,17 +86,41 @@ export default function Dashboard() {
 
     fetchData();
 
-    const channel = supabase
+    const channelUsers = supabase
       .channel('public:users:leaderboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
         fetchData();
       })
       .subscribe();
 
+    let channelNotifs: any = null;
+    if (profile?.id) {
+      channelNotifs = supabase
+        .channel(`public:notifications:${profile.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `userId=eq.${profile.id}` }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setNotifications(prev => [payload.new as UserNotification, ...prev].slice(0, 20));
+          } else if (payload.eventType === 'UPDATE') {
+            setNotifications(prev => prev.map(n => n.id === payload.new.id ? payload.new as UserNotification : n));
+          }
+        })
+        .subscribe();
+    }
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channelUsers);
+      if (channelNotifs) supabase.removeChannel(channelNotifs);
     };
-  }, []);
+  }, [profile?.id, profile?.isUploader, profile?.totalVotesReceived]);
+
+  const markAsRead = async (id: string) => {
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
+  };
+
+  const markAllAsRead = async () => {
+    if (!profile?.id) return;
+    await supabase.from('notifications').update({ read: true }).eq('userId', profile.id).eq('read', false);
+  };
 
   if (loading) {
     return (
@@ -227,6 +274,68 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Notifications Row */}
+        {profile?.isUploader && (
+          <div className="mt-8 bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+              <h3 className="text-lg font-bold flex items-center gap-2 dark:text-neutral-100">
+                <div className="relative">
+                  <Bell className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  {notifications.filter(n => !n.read).length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-neutral-900"></span>
+                  )}
+                </div>
+                Updates & Alerts
+              </h3>
+              {notifications.filter(n => !n.read).length > 0 && (
+                <button 
+                  onClick={markAllAsRead} 
+                  className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium transition-colors"
+                >
+                  Mark all as read
+                </button>
+              )}
+            </div>
+            
+            <div className="space-y-3">
+              {notifications.length === 0 ? (
+                <div className="text-center py-8 text-neutral-500 dark:text-neutral-400 text-sm">
+                  No new updates. Share your upload to get more votes!
+                </div>
+              ) : (
+                notifications.map((notif) => (
+                  <div 
+                    key={notif.id} 
+                    className={`flex items-start justify-between gap-4 p-4 rounded-2xl border transition-colors ${
+                      notif.read 
+                        ? 'bg-neutral-50/50 dark:bg-neutral-800/20 border-neutral-100 dark:border-neutral-800' 
+                        : 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30'
+                    }`}
+                  >
+                    <div>
+                      <p className={`text-sm ${notif.read ? 'text-neutral-600 dark:text-neutral-400' : 'text-neutral-900 dark:text-neutral-100 font-semibold'}`}>
+                        {notif.message}
+                      </p>
+                      <span className="text-xs text-neutral-400 dark:text-neutral-500 mt-1 block">
+                        {new Date(notif.createdAt).toLocaleDateString()} at {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {!notif.read && (
+                      <button 
+                        onClick={() => markAsRead(notif.id)}
+                        className="p-1 text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
+                        title="Mark as read"
+                      >
+                        <CheckCircle2 className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </PageTransition>
   );
